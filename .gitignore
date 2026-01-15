@@ -1,0 +1,33 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE / Editor files
+.vscode/
+.idea/
+
+# Streamlit cache / logs
+.streamlit/
+*.log
+
+# Data files (optional: only if you don’t want to commit CSV/Excel)
+*.csv
+*.xlsx
+
+# Python packaging
+*.egg-info/
+dist/
+build/
