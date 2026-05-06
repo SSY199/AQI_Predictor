@@ -5,6 +5,10 @@ from sklearn.ensemble import RandomForestRegressor
 from xgboost import XGBRegressor
 from sklearn.metrics import mean_absolute_error, r2_score
 
+# Kaggle imports
+import kagglehub
+from kagglehub import KaggleDatasetAdapter
+
 st.set_page_config(page_title="AQI Forecasting App", layout="wide")
 
 st.title("🌫️ Air Quality Index (AQI) Forecasting")
@@ -13,12 +17,24 @@ st.write("Predict tomorrow's AQI for a selected city using ML models.")
 # -------------------- Data Loading --------------------
 @st.cache_data
 def load_data():
-    df = pd.read_csv("city_day.csv")
-    df['Date'] = pd.to_datetime(df['Datetime'])
+    df = kagglehub.dataset_load(
+        KaggleDatasetAdapter.PANDAS,
+        "ankushpanday1/air-quality-data-in-india-2015-2024",
+        "city_day.csv"
+    )
+
+    # 🔥 IMPORTANT: Convert to proper pandas dataframe (fix Arrow issues)
+    df = pd.DataFrame(df)
+
+    # Format date
+    date_col = 'Datetime' if 'Datetime' in df.columns else 'Date'
+    df['Date'] = pd.to_datetime(df[date_col])
     df = df.sort_values('Date')
+
     return df
 
-df = load_data()
+with st.spinner('Fetching latest air quality data from Kaggle...'):
+    df = load_data()
 
 # -------------------- City Selector --------------------
 st.sidebar.header("⚙️ App Settings")
@@ -27,13 +43,16 @@ selected_city = st.sidebar.selectbox("Select City", cities, index=0)
 
 st.subheader(f"📍 City: {selected_city}")
 
-# Filter by selected city
 df = df[df['City'] == selected_city].copy()
 
 # -------------------- Data Cleaning --------------------
 st.subheader("📌 Data Preprocessing")
-st.write("Handling missing values using linear interpolation to preserve time-series continuity.")
-df = df.interpolate(method='linear', limit_direction='both')
+st.write("Handling missing values using linear interpolation.")
+
+# 🔥 FIX: Interpolate only numeric columns
+num_cols = df.select_dtypes(include=[np.number]).columns
+df[num_cols] = df[num_cols].interpolate(method='linear', limit_direction='both')
+
 df = df.dropna()
 
 # -------------------- Feature Engineering --------------------
@@ -48,6 +67,11 @@ target = 'AQI_Tomorrow'
 split_date = pd.to_datetime('2023-01-01')
 train = df[df['Date'] < split_date]
 test = df[df['Date'] >= split_date]
+
+# 🔥 Safety check (avoid crash if city has low data)
+if train.empty or test.empty:
+    st.error("Not enough data for this city to train/test. Please select another city.")
+    st.stop()
 
 X_train, y_train = train[features], train[target]
 X_test, y_test = test[features], test[target]
@@ -76,6 +100,7 @@ rf_preds, rf_mae, rf_r2 = evaluate_model(rf_model, X_test, y_test)
 xgb_preds, xgb_mae, xgb_r2 = evaluate_model(xgb_model, X_test, y_test)
 
 st.subheader("📊 Model Performance")
+
 col1, col2 = st.columns(2)
 with col1:
     st.metric("Random Forest MAE", f"{rf_mae:.2f}")
@@ -85,18 +110,18 @@ with col2:
     st.metric("XGBoost R²", f"{xgb_r2:.4f}")
 
 # -------------------- Visualization --------------------
-st.subheader("📈 Actual vs Predicted AQI (Test Period)")
+st.subheader("📈 Actual vs Predicted AQI")
+
 plot_df = pd.DataFrame({
     'Date': test['Date'],
     'Actual AQI': y_test,
     'Random Forest': rf_preds,
     'XGBoost': xgb_preds
-})
-plot_df = plot_df.set_index('Date')
+}).set_index('Date')
 
 st.line_chart(plot_df)
 
-# -------------------- AQI Category Function --------------------
+# -------------------- AQI Category --------------------
 def aqi_category(aqi):
     if aqi <= 50:
         return "Good"
@@ -111,9 +136,8 @@ def aqi_category(aqi):
     else:
         return "Severe"
 
-# -------------------- User Prediction --------------------
+# -------------------- Prediction --------------------
 st.subheader("🔮 Predict Tomorrow's AQI")
-st.write("Enter today's pollution values to forecast tomorrow's AQI.")
 
 with st.form("prediction_form"):
     pm25 = st.number_input("PM2.5", min_value=0.0, value=50.0)
@@ -132,20 +156,17 @@ if submitted:
     rf_pred = rf_model.predict(input_data)[0]
     xgb_pred = xgb_model.predict(input_data)[0]
 
-    rf_cat = aqi_category(rf_pred)
-    xgb_cat = aqi_category(xgb_pred)
-
     st.success("Prediction Completed!")
 
     col1, col2 = st.columns(2)
     with col1:
-        st.write("🌲 **Random Forest Prediction**")
+        st.write("🌲 **Random Forest**")
         st.metric("AQI", f"{rf_pred:.2f}")
-        st.write(f"Category: **{rf_cat}**")
+        st.write(f"Category: **{aqi_category(rf_pred)}**")
     with col2:
-        st.write("⚡ **XGBoost Prediction**")
+        st.write("⚡ **XGBoost**")
         st.metric("AQI", f"{xgb_pred:.2f}")
-        st.write(f"Category: **{xgb_cat}**")
+        st.write(f"Category: **{aqi_category(xgb_pred)}**")
 
 # -------------------- Footer --------------------
 st.markdown("---")
